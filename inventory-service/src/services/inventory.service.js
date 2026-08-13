@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 import inventoryProducer from '../kafka/producer/inventory.producer.js';
 import AppError from '../../../booking-service/src/utils/errors/appError.js';
 import { StatusCodes } from "http-status-codes";
+import { retryTransaction } from '../utils/retryTransaction';
 
 // ─── Kafka Event Handlers ───────────────────────────────────────────────────
 
@@ -464,12 +465,143 @@ const lockSeats = async (scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq
 
 
 
+
+// --- SEGMENT BOOKING: Added fromSeq/toSeq params for segment-aware confirmation ---
+const confirmSeats = async (scheduleId, seatIds, userId, bookingId, fromSeq, toSeq) => {
+     const result = await retryTransaction(async () => {
+          return prisma.$transaction(async (tx) => {
+               const seats = await tx.$queryRaw`
+                    SELECT id, "seatId", "seatNumber", status, "lockedBy"
+                    FROM seat_inventories
+                    WHERE "scheduleId" = ${scheduleId}
+                    AND "seatId" = ANY(${seatIds}::text[])
+                    FOR UPDATE NOWAIT
+               `;
+
+               if (seats.length !== seatIds.length) {
+                    throw new AppError('One or more seats not found', StatusCodes.NotFoundError);
+               }
+
+               // --- SEGMENT BOOKING: Confirm segment locks if segment params provided ---
+               if (fromSeq && toSeq) {
+                    // Transition segment lock rows from LOCKED → BOOKED
+                    const updated = await tx.$executeRaw`
+                         UPDATE seat_segment_locks
+                         SET status = 'BOOKED', "bookingId" = ${bookingId},
+                             "lockExpiresAt" = NULL,
+                             version = version + 1, "updatedAt" = NOW()
+                         WHERE "scheduleId" = ${scheduleId}
+                         AND "seatId" = ANY(${seatIds}::text[])
+                         AND "lockedBy" = ${userId}
+                         AND "fromSeq" = ${fromSeq}
+                         AND "toSeq" = ${toSeq}
+                         AND status = 'LOCKED'
+                    `;
+
+                    if (updated === 0) {
+                         throw new AppError(
+                              'Segment lock expired or not found. Please lock seats again.LOCK_EXPIRED',StatusCodes.CONFLICT);
+                    }
+               } else {
+                    // Fallback: full-journey confirmation checks
+                    const notLocked = seats.filter(s => s.status !== 'LOCKED');
+                    if (notLocked.length > 0) {
+                         throw new AppError(
+                              'Lock expired or seats not in LOCKED status. Please lock seats again.LOCK_EXPIRED',
+                              StatusCodes.CONFLICT
+                         );
+                    }
+
+                    const notOwnedByUser = seats.filter(s => s.lockedBy !== userId);
+                    if (notOwnedByUser.length > 0) {
+                         throw new AppError('Some seats are not locked by you', StatusCodes.FORBIDDEN);
+                    }
+               }
+
+               // --- SEGMENT BOOKING: Recompute seat statuses after segment lock transition ---
+               if (fromSeq && toSeq) {
+                    const affectedSeatIds = seats.map(s => s.seatId);
+                    await recomputeSegmentSeatStatuses(tx, scheduleId, affectedSeatIds);
+                    const counts = await recountScheduleAggregates(tx, scheduleId);
+
+                    const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+                    return {
+                         scheduleId,
+                         trainId: schedule.trainId,
+                         bookingId,
+                         confirmedSeats: seats.map(s => ({
+                              seatId: s.seatId,
+                              seatNumber: s.seatNumber,
+                              status: 'BOOKED',
+                         })),
+                         counts,
+                    };
+               }
+
+               // Full-journey: unconditional confirm (original fast path)
+               const seatPkIds = seats.map(s => s.id);
+               await tx.$executeRaw`
+                    UPDATE seat_inventories
+                    SET status = 'BOOKED', "bookingId" = ${bookingId},
+                        "lockExpiresAt" = NULL,
+                        version = version + 1, "updatedAt" = NOW()
+                    WHERE id = ANY(${seatPkIds}::text[])
+               `;
+
+               const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+               await tx.$executeRaw`
+                    UPDATE schedule_inventories
+                    SET locked = locked - ${seats.length},
+                        booked = booked + ${seats.length},
+                        version = version + 1,
+                        "updatedAt" = NOW()
+                    WHERE "scheduleId" = ${scheduleId}
+               `;
+
+               return {
+                    scheduleId,
+                    trainId: schedule.trainId,
+                    bookingId,
+                    confirmedSeats: seats.map(s => ({
+                         seatId: s.seatId,
+                         seatNumber: s.seatNumber,
+                         status: 'BOOKED',
+                    })),
+                    counts: {
+                         available: schedule.available,
+                         locked: schedule.locked - seats.length,
+                         booked: schedule.booked + seats.length,
+                    },
+               };
+          }, { timeout: 10000 });
+     });
+
+     try {
+          await inventoryProducer.publishSeatAvailabilityUpdated(
+               result.scheduleId, result.trainId,
+               result.counts.available, result.counts.locked, result.counts.booked
+          );
+     } catch (err) {
+          logger.error('Failed to publish availability after confirm', { scheduleId: result.scheduleId, error: err.message });
+     }
+
+     return result;
+};
+
+
+
+
 const inventoryService = {
      initializeInventory,
      cancelScheduleInventory,
      getAvailability,
      getSeats,
      lockSeats,
+   
+     confirmSeats,
+   
      recomputeSegmentSeatStatuses,
      recountScheduleAggregates,
 }

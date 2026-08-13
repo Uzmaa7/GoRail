@@ -466,6 +466,7 @@ const lockSeats = async (scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq
 
 
 
+
 // --- SEGMENT BOOKING: Added fromSeq/toSeq params for segment-aware confirmation ---
 const confirmSeats = async (scheduleId, seatIds, userId, bookingId, fromSeq, toSeq) => {
      const result = await retryTransaction(async () => {
@@ -591,7 +592,99 @@ const confirmSeats = async (scheduleId, seatIds, userId, bookingId, fromSeq, toS
 };
 
 
+const cancelBooking = async (scheduleId, bookingId, userId) => {
+     const result = await retryTransaction(async () => {
+          return prisma.$transaction(async (tx) => {
+               // --- SEGMENT BOOKING: Check segment locks FIRST ---
+               // For segment bookings, seat_inventories.bookingId is not set
+               // (only seat_segment_locks has the bookingId), so we must check here first.
+               const segmentLocks = await tx.seatSegmentLock.findMany({
+                    where: { scheduleId, bookingId, status: 'BOOKED' },
+               });
 
+               if (segmentLocks.length > 0) {
+                    await tx.$executeRaw`
+                         DELETE FROM seat_segment_locks
+                         WHERE "scheduleId" = ${scheduleId}
+                         AND "bookingId" = ${bookingId}
+                    `;
+
+                    // Recompute seat statuses + aggregates from actual segment lock state
+                    const affectedSeatIds = [...new Set(segmentLocks.map(l => l.seatId))];
+                    await recomputeSegmentSeatStatuses(tx, scheduleId, affectedSeatIds);
+                    const counts = await recountScheduleAggregates(tx, scheduleId);
+
+                    const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+                    return {
+                         scheduleId,
+                         trainId: schedule.trainId,
+                         bookingId,
+                         releasedSeats: affectedSeatIds,
+                         counts,
+                    };
+               }
+               // --- END SEGMENT BOOKING ---
+
+               // Fallback: full-journey cancel (no segment locks found)
+               const seats = await tx.$queryRaw`
+                    SELECT id, "seatId", "seatNumber", status, "lockedBy"
+                    FROM seat_inventories
+                    WHERE "scheduleId" = ${scheduleId}
+                    AND "bookingId" = ${bookingId}
+                    AND status = 'BOOKED'
+                    FOR UPDATE NOWAIT
+               `;
+
+               if (seats.length === 0) {
+                    throw new AppError('No booked seats found for this booking', StatusCodes.NotFoundError);
+               }
+
+               const seatPkIds = seats.map(s => s.id);
+               await tx.$executeRaw`
+                    UPDATE seat_inventories
+                    SET status = 'AVAILABLE', "lockedBy" = NULL,
+                        "lockedAt" = NULL, "lockExpiresAt" = NULL, "bookingId" = NULL,
+                        version = version + 1, "updatedAt" = NOW()
+                    WHERE id = ANY(${seatPkIds}::text[])
+               `;
+
+               const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+               await tx.$executeRaw`
+                    UPDATE schedule_inventories
+                    SET available = available + ${seats.length},
+                        booked = booked - ${seats.length},
+                        version = version + 1,
+                        "updatedAt" = NOW()
+                    WHERE "scheduleId" = ${scheduleId}
+               `;
+
+               return {
+                    scheduleId,
+                    trainId: schedule.trainId,
+                    bookingId,
+                    releasedSeats: seats.map(s => s.seatId),
+                    counts: {
+                         available: schedule.available + seats.length,
+                         locked: schedule.locked,
+                         booked: schedule.booked - seats.length,
+                    },
+               };
+          }, { timeout: 10000 });
+     });
+
+     try {
+          await inventoryProducer.publishSeatAvailabilityUpdated(
+               result.scheduleId, result.trainId,
+               result.counts.available, result.counts.locked, result.counts.booked
+          );
+     } catch (err) {
+          logger.error('Failed to publish availability after cancel-booking', { scheduleId: result.scheduleId, error: err.message });
+     }
+
+     return result;
+};
 
 const inventoryService = {
      initializeInventory,
@@ -601,7 +694,7 @@ const inventoryService = {
      lockSeats,
    
      confirmSeats,
-   
+     cancelBooking,
      recomputeSegmentSeatStatuses,
      recountScheduleAggregates,
 }

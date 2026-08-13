@@ -171,3 +171,39 @@ export const confirmSeats = async (req, res, next) => {
 
 
 
+export const cancelBooking = async (req, res, next) => {
+    try {
+        const { scheduleId, bookingId, userId } = req.body;
+
+        if (!scheduleId || !bookingId) {
+            throw new AppError("scheduleId and bookingId are required", StatusCodes.BAD_REQUEST);
+        }
+
+        if (!userId) {
+            throw new AppError("userId is required", StatusCodes.BAD_REQUEST);
+        }
+
+        const result = await inventoryService.cancelBooking(scheduleId, bookingId, userId);
+
+        SuccessResponse.data = {
+            scheduleId: result.scheduleId,
+            bookingId: result.bookingId,
+            releasedSeats: result.releasedSeats,
+        };
+        SuccessResponse.message = `Booking cancelled, ${result.releasedSeats.length} seat(s) released`;
+
+        return res
+            .status(StatusCodes.OK)
+            .json(SuccessResponse);
+
+    } catch (error) {
+        logger.error("Error in cancelBooking controller : ", error);
+
+        const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
+        ErrorResponse.error = error;
+
+        return res
+            .status(statusCode)
+            .json(ErrorResponse);
+    }
+};

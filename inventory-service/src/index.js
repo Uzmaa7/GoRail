@@ -14,6 +14,7 @@ import { disconnectAll } from './config/kafka.js';
 
 import prisma from './config/prisma.js';
 import inventoryConsumer from "../src/kafka/consumer/inventory.consumer.js";
+import inventoryRoutes from "../src/routes/inventory.route.js";
 
 
 const app = express();
@@ -53,6 +54,8 @@ app.get('/health', async (req, res) => {
 
 
 
+// API Routes
+app.use(inventoryRoutes);
 
 const startServer = async () => {
      try {

@@ -33,8 +33,8 @@ export class BookingController {
             SuccessResponse.data = result;
 
             return res
-            .status(StatusCodes.CREATED)
-            .json(SuccessResponse)
+                .status(StatusCodes.CREATED)
+                .json(SuccessResponse)
 
 
 
@@ -48,6 +48,39 @@ export class BookingController {
                 .json(ErrorResponse)
         }
     }
+
+    async verifyPayment(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const { bookingId } = req.params;
+            const { razorpayPaymentId, razorpaySignature } = req.body;
+
+            if (!razorpayPaymentId || !razorpaySignature) {
+                throw new AppError('razorpayPaymentId and razorpaySignature are required', StatusCodes.BAD_REQUEST);
+            }
+
+            const result = await bookingService.verifyPayment(bookingId, userId, razorpayPaymentId, razorpaySignature);
+
+            SuccessResponse.message = "Payment Verified Successfully";
+            SuccessResponse.data = result;
+
+            return res
+                .status(StatusCodes.OK)
+                .json(SuccessResponse)
+
+        } catch (error) {
+            logger.error("Error in BookingController [verifyPayment]:", error);
+
+            ErrorResponse.error = error;
+
+            return res
+                .status(error.statusCode)
+                .json(ErrorResponse)
+        }
+
+
+
+    };
 
 
 }

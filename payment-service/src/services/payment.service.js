@@ -4,6 +4,7 @@ import logger from "../../../booking-service/src/config/logger.js";
 import AppError from "../../../booking-service/src/utils/errors/appError.js";
 import { StatusCodes } from "http-status-codes";
 import paymentProducer from "../kafka/producer/payment.producer.js";
+import { getGateway } from './gateways/gateway.factory.js';
 
 // ─── Idempotency Helper ──────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ const createPaymentOrder = async (bookingId, amount, userId, idempotencyKey) => 
     return withIdempotency(`payment-order:${idempotencyKey}`, async () => {
         const gateway = getGateway();
 
-        // Create order with gateway
+        // Create order with the help of instance(gateway is RazorpayGateway instance)
         const gatewayResult = await gateway.createOrder(amount, 'INR', bookingId, {
             bookingId,
             userId,

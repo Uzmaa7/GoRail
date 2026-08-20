@@ -18,6 +18,7 @@ function getGateway() {
 
      switch (provider) {
           case 'razorpay':
+               //we are creating an instance of RazorpayGateway
                gatewayInstance = new RazorpayGateway(
                     config.RAZORPAY_KEY_ID,
                     config.RAZORPAY_KEY_SECRET,

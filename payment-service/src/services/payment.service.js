@@ -326,6 +326,44 @@ const handlePaymentFailed = async (paymentOrder, gatewayPaymentId, paymentEntity
      return { status: 'failed', paymentOrderId: paymentOrder.id };
 };
 
+const handleRefundProcessed = async (paymentOrder, refundEntity) => {
+     if (!refundEntity) return { status: 'ignored', reason: 'no_refund_entity' };
+
+     const gatewayRefundId = refundEntity.id;
+
+     const refund = await prisma.refund.findUnique({
+          where: { gatewayRefundId },
+     });
+
+     if (refund) {
+          await prisma.refund.update({
+               where: { id: refund.id },
+               data: { status: 'COMPLETED' },
+          });
+
+          // Update parent payment order status
+          const allRefunds = await prisma.refund.findMany({
+               where: { paymentOrderId: paymentOrder.id },
+          });
+
+          const totalRefunded = allRefunds
+               .filter(r => r.status === 'COMPLETED' || r.id === refund.id)
+               .reduce((sum, r) => sum + r.amount, 0);
+
+          const newStatus = totalRefunded >= paymentOrder.amount ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+
+          await prisma.paymentOrder.update({
+               where: { id: paymentOrder.id },
+               data: { status: newStatus, version: { increment: 1 } },
+          });
+
+          logger.info(`Refund processed: ${gatewayRefundId}`, { newStatus });
+     }
+
+     return { status: 'refund_processed', gatewayRefundId };
+};
+
+
 const paymentService = {
     createPaymentOrder,
     verifyAndCapturePayment,

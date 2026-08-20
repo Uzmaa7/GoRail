@@ -17,13 +17,13 @@ export const razorpayWebhook = async (req, res, next) => {
             logger.warn('Webhook received without signature header');
 
             ErrorResponse.error = {
-                    explanation: 'Missing signature header'
-               };
-               ErrorResponse.message = 'Missing x-razorpay-signature header';
+                explanation: 'Missing signature header'
+            };
+            ErrorResponse.message = 'Missing x-razorpay-signature header';
 
-               return res
-                    .status(StatusCodes.BAD_REQUEST)
-                    .json(ErrorResponse);
+            return res
+                .status(StatusCodes.BAD_REQUEST)
+                .json(ErrorResponse);
         }
 
         const rawBody = req.body;

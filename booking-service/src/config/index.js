@@ -19,7 +19,12 @@ const config = {
     // Inter-service communication
     INVENTORY_SERVICE_URL: process.env.INVENTORY_SERVICE_URL || 'http://localhost:4007',
     INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY,
-    
+
+    // Booking TTL
+    BOOKING_TTL_SECONDS: parseInt(process.env.BOOKING_TTL_SECONDS || '600', 10),
+    LOCK_TTL_SECONDS: parseInt(process.env.LOCK_TTL_SECONDS || '600', 10),
+    BOOKING_EXPIRY_CHECK_INTERVAL_MS: parseInt(process.env.BOOKING_EXPIRY_CHECK_INTERVAL_MS || '30000', 10),
+
 
 }
 

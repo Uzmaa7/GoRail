@@ -15,6 +15,9 @@ const config = {
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY,
 
+    LOCK_TTL_SECONDS: parseInt(process.env.LOCK_TTL_SECONDS || '300', 10),
+    LOCK_EXPIRY_INTERVAL_MS: parseInt(process.env.LOCK_EXPIRY_INTERVAL_MS || '60000', 10),
+
 }
 
 export { config };

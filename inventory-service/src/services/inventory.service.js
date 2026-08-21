@@ -463,7 +463,111 @@ const lockSeats = async (scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq
 };
 
 
+// --- SEGMENT BOOKING: Added fromSeq/toSeq params for segment-aware unlocking ---
+const unlockSeats = async (scheduleId, seatIds, userId, fromSeq, toSeq) => {
+     const result = await retryTransaction(async () => {
+          return prisma.$transaction(async (tx) => {
+               // Row-level lock
+               const seats = await tx.$queryRaw`
+                    SELECT id, "seatId", "seatNumber", status, "lockedBy"
+                    FROM seat_inventories
+                    WHERE "scheduleId" = ${scheduleId}
+                    AND "seatId" = ANY(${seatIds}::text[])
+                    FOR UPDATE NOWAIT
+               `;
 
+               if (seats.length !== seatIds.length) {
+                    throw new NotFoundError('One or more seats not found');
+               }
+
+               // --- SEGMENT BOOKING: Segment-aware unlock ---
+               if (fromSeq && toSeq) {
+                    // Delete specific segment locks for this user/segment
+                    await tx.$executeRaw`
+                         DELETE FROM seat_segment_locks
+                         WHERE "scheduleId" = ${scheduleId}
+                         AND "seatId" = ANY(${seatIds}::text[])
+                         AND "lockedBy" = ${userId}
+                         AND "fromSeq" = ${fromSeq}
+                         AND "toSeq" = ${toSeq}
+                         AND status = 'LOCKED'
+                    `;
+
+                    // Recompute seat statuses + aggregates from actual segment lock state
+                    const affectedSeatIds = seats.map(s => s.seatId);
+                    await recomputeSegmentSeatStatuses(tx, scheduleId, affectedSeatIds);
+                    const counts = await recountScheduleAggregates(tx, scheduleId);
+
+                    const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+                    return {
+                         scheduleId,
+                         trainId: schedule.trainId,
+                         unlockedSeats: seats.map(s => s.seatId),
+                         counts,
+                    };
+               }
+
+               // Fallback: full-journey unlock (no segment params)
+               // All must be LOCKED
+               const notLocked = seats.filter(s => s.status !== 'LOCKED');
+               if (notLocked.length > 0) {
+                    throw new ConflictError(
+                         `Seats not in LOCKED status: ${notLocked.map(s => `seat #${s.seatNumber} is ${s.status}`).join(', ')}`
+                    );
+               }
+
+               // All must be locked by this user
+               const notOwnedByUser = seats.filter(s => s.lockedBy !== userId);
+               if (notOwnedByUser.length > 0) {
+                    throw new ForbiddenError('Some seats are not locked by you');
+               }
+
+               // Unlock
+               const seatPkIds = seats.map(s => s.id);
+               await tx.$executeRaw`
+                    UPDATE seat_inventories
+                    SET status = 'AVAILABLE', "lockedBy" = NULL,
+                        "lockedAt" = NULL, "lockExpiresAt" = NULL,
+                        version = version + 1, "updatedAt" = NOW()
+                    WHERE id = ANY(${seatPkIds}::text[])
+               `;
+
+               const schedule = await tx.scheduleInventory.findUnique({ where: { scheduleId } });
+
+               await tx.$executeRaw`
+                    UPDATE schedule_inventories
+                    SET available = available + ${seats.length},
+                        locked = locked - ${seats.length},
+                        version = version + 1,
+                        "updatedAt" = NOW()
+                    WHERE "scheduleId" = ${scheduleId}
+               `;
+
+               return {
+                    scheduleId,
+                    trainId: schedule.trainId,
+                    unlockedSeats: seats.map(s => s.seatId),
+                    counts: {
+                         available: schedule.available + seats.length,
+                         locked: schedule.locked - seats.length,
+                         booked: schedule.booked,
+                    },
+               };
+          }, { timeout: 10000 });
+     });
+
+     try {
+          await inventoryProducer.publishSeatAvailabilityUpdated(
+               result.scheduleId, result.trainId,
+               result.counts.available, result.counts.locked, result.counts.booked
+          );
+     } catch (err) {
+          logger.error('Failed to publish availability after unlock', { scheduleId: result.scheduleId, error: err.message });
+     }
+
+     return result;
+};
 
 
 
@@ -686,16 +790,45 @@ const cancelBooking = async (scheduleId, bookingId, userId) => {
      return result;
 };
 
+// ─── Lock Expiry Helper (used by lockExpiry.js) ─────────────────────────────
+
+const recountAndPublish = async (scheduleId) => {
+     const counts = await prisma.$queryRaw`
+          SELECT
+               COUNT(*) FILTER (WHERE status = 'AVAILABLE')::int AS available,
+               COUNT(*) FILTER (WHERE status = 'LOCKED')::int AS locked,
+               COUNT(*) FILTER (WHERE status = 'BOOKED')::int AS booked
+          FROM seat_inventories
+          WHERE "scheduleId" = ${scheduleId}
+     `;
+
+     const { available, locked, booked } = counts[0];
+
+     const schedule = await prisma.scheduleInventory.update({
+          where: { scheduleId },
+          data: { available, locked, booked, version: { increment: 1 } },
+     });
+
+     try {
+          await inventoryProducer.publishSeatAvailabilityUpdated(scheduleId, schedule.trainId, available, locked, booked);
+     } catch (err) {
+          logger.error('Failed to publish availability after recount', { scheduleId, error: err.message });
+     }
+
+     return { available, locked, booked };
+};
+
 const inventoryService = {
      initializeInventory,
      cancelScheduleInventory,
      getAvailability,
      getSeats,
      lockSeats,
-   
+     unlockSeats,
      confirmSeats,
      cancelBooking,
      recomputeSegmentSeatStatuses,
      recountScheduleAggregates,
+     recountAndPublish
 }
 export default inventoryService;

@@ -81,6 +81,33 @@ const inventoryClient = {
         });
     },
 
+     async releaseSeats(scheduleId, seatIds, userId, fromSeq, toSeq) {
+          return withRetry(async () => {
+               const { data } = await client.post('/seats/unlock', {
+                    scheduleId,
+                    seatIds,
+                    userId,
+                    fromSeq,  // --- SEGMENT BOOKING
+                    toSeq,    // --- SEGMENT BOOKING
+               });
+               return data.data;
+          });
+     },
+
+     async confirmSeats(scheduleId, seatIds, userId, bookingId, fromSeq, toSeq) {
+          return withRetry(async () => {
+               const { data } = await client.post('/seats/confirm', {
+                    scheduleId,
+                    seatIds,
+                    userId,
+                    bookingId,
+                    fromSeq,  // --- SEGMENT BOOKING
+                    toSeq,    // --- SEGMENT BOOKING
+               });
+               return data.data;
+          });
+     },
+
 
 }
 

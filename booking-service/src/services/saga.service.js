@@ -104,6 +104,45 @@ async function executeCreatePayment(booking) {
     }
 }
 
+// --- SEGMENT BOOKING: Added fromSeq/toSeq params ---
+async function executeConfirmSeats(booking, seatIds, fromSeq, toSeq) {
+     const sagaLog = await prisma.sagaLog.create({
+          data: {
+               bookingId: booking.id,
+               step: 'CONFIRM_SEATS',
+               status: 'PENDING',
+               request: { scheduleId: booking.scheduleId, seatIds, userId: booking.userId, bookingId: booking.id, fromSeq, toSeq }, // --- SEGMENT BOOKING
+          },
+     });
+
+     try {
+          const result = await inventoryClient.confirmSeats(
+               booking.scheduleId,
+               seatIds,
+               booking.userId,
+               booking.id,
+               fromSeq,  // --- SEGMENT BOOKING
+               toSeq     // --- SEGMENT BOOKING
+          );
+
+          await prisma.sagaLog.update({
+               where: { id: sagaLog.id },
+               data: { status: 'COMPLETED', response: result },
+          });
+
+          logger.info(`Saga CONFIRM_SEATS completed for booking ${booking.id}`);
+          return result;
+
+     } catch (error) {
+          const errorMsg = error.response?.data?.message || error.message;
+          await prisma.sagaLog.update({
+               where: { id: sagaLog.id },
+               data: { status: 'FAILED', error: errorMsg },
+          });
+          throw error;
+     }
+}
+
 // ─── Compensation Steps ──────────────────────────────────────────────────────
 
 async function compensateHoldSeats(booking, seatIds) {
@@ -197,5 +236,6 @@ export const saga = {
     compensateAll,
     compensateHoldSeats,
     compensateCreatePayment,
-    compensateConfirmSeats
+    compensateConfirmSeats,
+    executeConfirmSeats
 };

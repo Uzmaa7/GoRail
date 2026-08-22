@@ -8,6 +8,7 @@ import { saga } from "../services/saga.service.js";
 import { acquireSeatLocks, releaseSeatLocks, forceReleaseSeatLocks } from "../utils/distributedLock.js";
 import idempotencyRepository from "../repositories/idempotencyRepository.js";
 import prisma from "../config/prisma.js";
+import bookingProducer from "../kafka/producer/booking.producer.js";
 
 
 // ─── Create Booking ──────────────────────────────────────────────────────────
@@ -455,6 +456,70 @@ class BookingService {
             }
         }
     }
+
+    // ─── Handle Payment Failure (Kafka consumer) ─────────────────────────────────
+
+    async handlePaymentFailure(paymentOrderId, reason){
+        const booking = await prisma.booking.findUnique({
+            where: { paymentOrderId },
+            include: { seats: true },
+        });
+
+        if (!booking) {
+            logger.warn(`No booking found for paymentOrderId: ${paymentOrderId}`);
+            return;
+        }
+
+        // Idempotent
+        if (booking.status === 'FAILED' || booking.status === 'CANCELLED' || booking.status === 'EXPIRED') {
+            logger.info(`Booking ${booking.id} already in terminal state: ${booking.status}`);
+            return;
+        }
+
+        if (booking.status !== 'PAYMENT_PENDING') {
+            logger.warn(`Booking ${booking.id} in unexpected status: ${booking.status}`);
+            return;
+        }
+
+        const seatIds = booking.seats.map(s => s.seatId).sort();
+
+        // Atomically claim this booking before compensating
+        try {
+            await casUpdateBooking(booking.id, booking.version, {
+                status: 'FAILED',
+                failureReason: reason || 'payment_failed',
+            });
+        } catch (error) {
+            if (error.code === 'STALE_STATE') {
+                logger.info(`Booking ${booking.id} already handled by another process, skipping`);
+                return;
+            }
+            throw error;
+        }
+
+        // Compensate: release held seats
+        await saga.compensateHoldSeats(booking, seatIds);
+
+        // Release Redis locks (segment-aware)
+        await forceReleaseSeatLocks(booking.scheduleId, seatIds, booking.fromSeq, booking.toSeq);
+
+        // Publish BOOKING_FAILED
+        try {
+            const userInfo = await fetchUserForNotification(booking.userId);
+            await bookingProducer.publishBookingFailed({
+                bookingId: booking.id,
+                userId: booking.userId,
+                email: userInfo.email,
+                firstName: userInfo.firstName,
+                scheduleId: booking.scheduleId,
+                reason: reason || 'payment_failed',
+            });
+        } catch (err) {
+            logger.error('Failed to publish BOOKING_FAILED after retries', { bookingId: booking.id, error: err.message });
+        }
+
+        logger.info(`Booking ${booking.id} failed: ${reason}`);
+    };
 }
 
 export default new BookingService();

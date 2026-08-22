@@ -43,8 +43,40 @@ const disconnectProducer = async () => {
      }
 };
 
-// Graceful shutdown
-process.on('SIGTERM', disconnectProducer);
-process.on('SIGINT', disconnectProducer);
+// Consumer (for PAYMENT_SUCCESS, PAYMENT_FAILED)
+const consumer = kafka.consumer({
+     groupId: 'booking-service-group',
+     sessionTimeout: 30000,
+     heartbeatInterval: 3000,
+     maxPollIntervalMs: 300000,
+     retry: { retries: 5 }
+});
 
-export { kafka, producer, connectProducer, disconnectProducer };
+let isConsumerConnected = false;
+
+const connectConsumer = async () => {
+     if (!isConsumerConnected) {
+          await consumer.connect();
+          isConsumerConnected = true;
+          logger.info('Kafka consumer connected successfully.');
+     }
+};
+
+
+
+const disconnectConsumer =  async () => {
+     if (isConsumerConnected) {
+          await consumer.disconnect();
+          isConsumerConnected = false;
+          logger.info('Kafka consumer disconnected.');
+     }
+};
+
+
+const disconnectAll = async () => {
+     await disconnectProducer();
+     await disconnectConsumer();
+};
+
+export { kafka, producer, consumer, connectProducer,connectConsumer,
+     disconnectProducer, disconnectConsumer, disconnectAll };

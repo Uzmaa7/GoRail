@@ -698,5 +698,71 @@ export class BookingService {
             updatedAt: booking.updatedAt,
         };
     }
+
+    // ─── Get User Bookings ───────────────────────────────────────────────────────
+    async getUserBookings(userId, { status, page = 1, limit = 10 } = {}) {
+        if (!userId) {
+            throw new AppError("userId is required", StatusCodes.BAD_REQUEST);
+        }
+
+        const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+        const parsedLimit = Math.max(1, parseInt(limit, 10) || 10);
+        const skip = (parsedPage - 1) * parsedLimit;
+
+        const where = { userId };
+        if (status) {
+            where.status = status.toUpperCase();
+        }
+
+        const [bookings, total] = await Promise.all([
+            prisma.booking.findMany({
+                where,
+                include: {
+                    seats: { orderBy: { seatNumber: 'asc' } },
+                    passengers: true,
+                },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: parsedLimit,
+            }),
+            prisma.booking.count({ where }),
+        ]);
+
+        return {
+            bookings: bookings.map(b => ({
+                id: b.id,
+                status: b.status,
+                scheduleId: b.scheduleId,
+                trainNumber: b.trainNumber,
+                trainName: b.trainName,
+                departureDate: b.departureDate,
+                totalAmount: b.totalAmount,
+                seatCount: b.seatCount,
+                fromStationId: b.fromStationId,  // --- SEGMENT BOOKING
+                toStationId: b.toStationId,      // --- SEGMENT BOOKING
+                fromSeq: b.fromSeq,              // --- SEGMENT BOOKING
+                toSeq: b.toSeq,                  // --- SEGMENT BOOKING
+                seats: b.seats.map(s => ({
+                    seatId: s.seatId,
+                    seatNumber: s.seatNumber,
+                    seatType: s.seatType,
+                    price: s.price,
+                })),
+                passengers: b.passengers.map(p => ({
+                    id: p.id,
+                    name: p.name,
+                    age: p.age,
+                    gender: p.gender,
+                })),
+                createdAt: b.createdAt,
+            })),
+            pagination: {
+                page: parsedPage,
+                limit: parsedLimit,
+                total,
+                totalPages: Math.ceil(total / parsedLimit) || 1,
+            },
+        };
+    }
 }
 

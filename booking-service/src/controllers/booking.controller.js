@@ -111,8 +111,6 @@ export class BookingController {
         }
     };
 
-
-
     async getBooking(req, res, next) {
         try {
             const userId = req.user.id;
@@ -141,4 +139,35 @@ export class BookingController {
                 .json(ErrorResponse);
         }
     }
+
+    async getUserBookings(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const { status, page, limit } = req.query;
+
+            const result = await this.bookingService.getUserBookings(userId, {
+                status,
+                page: page ? parseInt(page, 10) : 1,
+                limit: limit ? parseInt(limit, 10) : 10,
+            });
+
+            SuccessResponse.message = "User Bookings Fetched Successfully";
+            SuccessResponse.data = result;
+
+            return res
+                .status(StatusCodes.OK)
+                .json(SuccessResponse);
+
+        } catch (error) {
+            logger.error("Error in BookingController [getUserBookings]:", error);
+
+            ErrorResponse.error = error;
+
+            return res
+                .status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR)
+                .json(ErrorResponse);
+        }
+    }
+
+
 }

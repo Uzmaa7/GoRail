@@ -59,7 +59,7 @@ export class BookingController {
                 throw new AppError('razorpayPaymentId and razorpaySignature are required', StatusCodes.BAD_REQUEST);
             }
 
-            const result = await bookingService.verifyPayment(bookingId, userId, razorpayPaymentId, razorpaySignature);
+            const result = await this.bookingService.verifyPayment(bookingId, userId, razorpayPaymentId, razorpaySignature);
 
             SuccessResponse.message = "Payment Verified Successfully";
             SuccessResponse.data = result;
@@ -82,5 +82,63 @@ export class BookingController {
 
     };
 
+    async cancelBooking(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const { bookingId } = req.params;
 
+            if (!bookingId) {
+                throw new AppError('bookingId is required', StatusCodes.BAD_REQUEST);
+            }
+
+            const result = await this.bookingService.cancelBooking(bookingId, userId);
+
+            SuccessResponse.message = "Booking Cancelled Successfully";
+            SuccessResponse.data = result;
+
+            return res
+                .status(StatusCodes.OK)
+                .json(SuccessResponse);
+
+        } catch (error) {
+            logger.error("Error in BookingController [cancelBooking]:", error);
+
+            ErrorResponse.error = error;
+
+            return res
+                .status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR)
+                .json(ErrorResponse);
+        }
+    };
+
+
+
+    async getBooking(req, res, next) {
+        try {
+            const userId = req.user.id;
+            const { bookingId } = req.params;
+
+            if (!bookingId) {
+                throw new AppError('bookingId is required', StatusCodes.BAD_REQUEST);
+            }
+
+            const result = await this.bookingService.getBooking(bookingId, userId);
+
+            SuccessResponse.message = "Booking Details Fetched Successfully";
+            SuccessResponse.data = result;
+
+            return res
+                .status(StatusCodes.OK)
+                .json(SuccessResponse);
+
+        } catch (error) {
+            logger.error("Error in BookingController [getBookingDetails]:", error);
+
+            ErrorResponse.error = error;
+
+            return res
+                .status(error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR)
+                .json(ErrorResponse);
+        }
+    }
 }

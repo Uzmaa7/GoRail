@@ -1,3 +1,5 @@
+import CrudRepository from "./CrudRepository.js";
+import AppError from "../utils/errors/appError.js";
 
 class BookingRepository extends CrudRepository {
     constructor() {
@@ -23,8 +25,7 @@ class BookingRepository extends CrudRepository {
         }
 
         return response;
-    }
-
-
-   
+    }  
 }
+
+export default new BookingRepository();

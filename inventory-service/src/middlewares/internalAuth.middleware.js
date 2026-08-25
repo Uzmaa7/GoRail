@@ -1,5 +1,5 @@
 import { StatusCodes } from 'http-status-codes';
-import config from '../config';
+import {config} from '../config/index.js';
 import AppError from '../utils/errors/appError.js';
 
 

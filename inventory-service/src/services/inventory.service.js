@@ -4,7 +4,7 @@ import { config } from '../config/index.js';
 import inventoryProducer from '../kafka/producer/inventory.producer.js';
 import AppError from '../../../booking-service/src/utils/errors/appError.js';
 import { StatusCodes } from "http-status-codes";
-import { retryTransaction } from '../utils/retryTransaction';
+import { retryTransaction } from '../utils/retryTransaction.js';
 
 // ─── Kafka Event Handlers ───────────────────────────────────────────────────
 

@@ -118,7 +118,47 @@ export const lockSeats = async (req, res, next) => {
 };
 
 
+export const unlockSeats = async (req, res, next) => {
+    try {
+        const { scheduleId, seatIds, userId, fromSeq, toSeq } = req.body; // --- SEGMENT BOOKING: added fromSeq/toSeq
 
+        if (!scheduleId || !seatIds || !Array.isArray(seatIds) || seatIds.length === 0) {
+            throw new AppError("scheduleId and seatIds (non-empty array) are required", StatusCodes.BAD_REQUEST);
+        }
+
+        if (!userId) {
+            throw new AppError("userId is required", StatusCodes.BAD_REQUEST);
+        }
+
+        const result = await inventoryService.unlockSeats(
+            scheduleId, 
+            seatIds, 
+            userId, 
+            fromSeq, 
+            toSeq
+        );
+
+        SuccessResponse.data = {
+            scheduleId: result.scheduleId,
+            unlockedSeats: result.unlockedSeats,
+        };
+        SuccessResponse.message = `${result.unlockedSeats.length} seat(s) unlocked successfully`;
+
+        return res
+            .status(StatusCodes.OK)
+            .json(SuccessResponse);
+
+    } catch (error) {
+        logger.error("Error in unlockSeats controller : ", error);
+
+        const statusCode = error.statusCode || StatusCodes.INTERNAL_SERVER_ERROR;
+        ErrorResponse.error = error;
+
+        return res
+            .status(statusCode)
+            .json(ErrorResponse);
+    }
+};
 
 
 export const confirmSeats = async (req, res, next) => {

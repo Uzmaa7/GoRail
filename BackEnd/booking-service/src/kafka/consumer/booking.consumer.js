@@ -1,11 +1,11 @@
-import { consumer } from "../config/kafka.js";
+import { consumer } from "../../config/kafka.js";
 import { producer, connectProducer } from "../../config/kafka.js";
-import { StatusCodes } from 'http-status-codes';
-import AppError from '../utils/errors/appError.js';
-import logger from "../config/logger.js";
-import { TOPICS } from '../utils/constant.js';
-import bookingService from "../../services/booking.service.js";
+import logger from "../../config/logger.js";
+import { TOPICS } from "../../utils/constants.js"
+import {BookingService} from "../../services/booking.service.js";
 import {withDLQ} from '../../../../inventory-service/src/utils/dlqHandler.js';
+
+const bookingService = new BookingService();
 
 class BookingConsumer {
     async start() {

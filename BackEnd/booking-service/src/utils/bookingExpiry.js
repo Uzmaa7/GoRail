@@ -1,11 +1,12 @@
-import prisma from '../config/prisma';
-import logger from '../config/logger';
-import { config } from '../config';
-import { redis }  from '../config/redis';
-import { forceReleaseSeatLocks } from './distributedLock';
-import { compensateAll } from '../services/saga.service';
-import { userClient } from '../services/userClient';
+import prisma from '../config/prisma.js';
+import logger from '../config/logger.js';
+import { config } from '../config/index.js';
+import { redis }  from '../config/redis.js';
+import { forceReleaseSeatLocks } from './distributedLock.js';
+import  saga  from '../services/saga.service.js';
+
 import bookingProducer from '../kafka/producer/booking.producer.js';
+import { userClient } from '../services/userClient.js';
 
 
 
@@ -101,7 +102,7 @@ async function cleanExpiredBookings() {
                     }
 
                     // Compensate all completed saga steps
-                    await compensateAll(booking, seatIds);
+                    await saga.compensateAll(booking, seatIds);
 
                     // Release Redis locks (segment-aware)
                     await forceReleaseSeatLocks(booking.scheduleId, seatIds, booking.fromSeq, booking.toSeq);

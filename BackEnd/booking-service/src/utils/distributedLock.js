@@ -1,5 +1,5 @@
-import { redis } from '../config/redis';
-import logger from '../config/logger';
+import { redis } from '../config/redis.js';
+import logger from '../config/logger.js';
 
 /**
  * Redis distributed locking using Lua scripts for atomicity.

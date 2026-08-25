@@ -33,6 +33,8 @@ const config = {
     KAFKA_CLIENT_ID: process.env.KAFKA_CLIENT_ID,
     KAFKA_BROKER: process.env.KAFKA_BROKER,
 
+    INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY,
+
 }
 
 export {config};

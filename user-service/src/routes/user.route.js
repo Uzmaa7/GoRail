@@ -7,6 +7,6 @@ const {userController} = initializedContainer.controller;
 
 const router = express.Router();
 
-router.get("/get-profile", getUserContext, (req, res, next) => userController.getProfile(req, res, next));
+router.get("/profile", getUserContext, (req, res, next) => userController.getProfile(req, res, next));
 
 export default router;

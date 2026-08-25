@@ -12,7 +12,7 @@ router.post("/verify-otp", (req, res, next) => authController.verifyOtp(req, res
 
 router.post("/login", (req, res, next) => authController.login(req, res, next));
 
-router.get("/refresh", (req, res, next) => authController.rotateRefreshToken(req, res, next));
+router.post("/refresh", (req, res, next) => authController.rotateRefreshToken(req, res, next));
 
 
 export default router;

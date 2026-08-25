@@ -35,14 +35,14 @@ async function withRetry(fn, maxRetries = 3) {
 }
 
 function extractError(error) {
-     if (error.response?.data) {
-          return {
-               status: error.response.status,
-               message: error.response.data.message || error.message,
-               code: error.response.data.error,
-          };
-     }
-     return { status: 500, message: error.message, code: 'PAYMENT_SERVICE_ERROR' };
+    if (error.response?.data) {
+        return {
+            status: error.response.status,
+            message: error.response.data.message || error.message,
+            code: error.response.data.error,
+        };
+    }
+    return { status: 500, message: error.message, code: 'PAYMENT_SERVICE_ERROR' };
 }
 
 const inventoryClient = {
@@ -67,7 +67,7 @@ const inventoryClient = {
     },
 
     // --- SEGMENT BOOKING: Added fromSeq/toSeq params to holdSeats, releaseSeats, confirmSeats ---
-     async holdSeats(scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq) {
+    async holdSeats(scheduleId, seatIds, userId, ttlSeconds, fromSeq, toSeq) {
         return withRetry(async () => {
             const { data } = await client.post('/seats/lock', {
                 scheduleId,
@@ -81,33 +81,43 @@ const inventoryClient = {
         });
     },
 
-     async releaseSeats(scheduleId, seatIds, userId, fromSeq, toSeq) {
-          return withRetry(async () => {
-               const { data } = await client.post('/seats/unlock', {
-                    scheduleId,
-                    seatIds,
-                    userId,
-                    fromSeq,  // --- SEGMENT BOOKING
-                    toSeq,    // --- SEGMENT BOOKING
-               });
-               return data.data;
-          });
-     },
+    async releaseSeats(scheduleId, seatIds, userId, fromSeq, toSeq) {
+        return withRetry(async () => {
+            const { data } = await client.post('/seats/unlock', {
+                scheduleId,
+                seatIds,
+                userId,
+                fromSeq,  // --- SEGMENT BOOKING
+                toSeq,    // --- SEGMENT BOOKING
+            });
+            return data.data;
+        });
+    },
 
-     async confirmSeats(scheduleId, seatIds, userId, bookingId, fromSeq, toSeq) {
-          return withRetry(async () => {
-               const { data } = await client.post('/seats/confirm', {
-                    scheduleId,
-                    seatIds,
-                    userId,
-                    bookingId,
-                    fromSeq,  // --- SEGMENT BOOKING
-                    toSeq,    // --- SEGMENT BOOKING
-               });
-               return data.data;
-          });
-     },
+    async confirmSeats(scheduleId, seatIds, userId, bookingId, fromSeq, toSeq) {
+        return withRetry(async () => {
+            const { data } = await client.post('/seats/confirm', {
+                scheduleId,
+                seatIds,
+                userId,
+                bookingId,
+                fromSeq,  // --- SEGMENT BOOKING
+                toSeq,    // --- SEGMENT BOOKING
+            });
+            return data.data;
+        });
+    },
 
+    async cancelBooking(scheduleId, bookingId, userId) {
+        return withRetry(async () => {
+            const { data } = await client.post('/seats/cancel-booking', {
+                scheduleId,
+                bookingId,
+                userId,
+            });
+            return data.data;
+        });
+    },
 
 }
 

@@ -170,8 +170,8 @@ docker compose version
 
 #### 1. Clone the repository
 ```bash
-git clone https://github.com/Uzmaa7/irctc-backend.git
-cd irctc-backend
+git clone https://github.com/Uzmaa7/GoRail.git
+cd GoRail
 ```
 
 #### 2. Start the infrastructure stack
